@@ -33,7 +33,7 @@ SCETOOL_FLAGS	+=	--self-cap-flags 0000000000000000000000000000000000000000000000
 # SOURCES is a list of directories containing source code
 # INCLUDES is a list of directories containing extra header files
 #---------------------------------------------------------------------------------
-TARGET		:=	sfm_ps3
+TARGET		:=	EXTRA
 BUILD		:=	build
 SOURCES		:=	source
 DATA		:=	data

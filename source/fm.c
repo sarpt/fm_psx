@@ -22,6 +22,11 @@
 #include "ff.h"
 #include "ntfs.h"
 
+#define FONT_W	8
+#define FONT_H	16
+
+static int frame = 0;
+
 //status message
 static char *s_msg[STATUS_H] = {NULL, NULL, NULL, NULL};
 //status message text color
@@ -33,7 +38,7 @@ int fm_status_set (char * sm, int idx, int col)
         return -1;
     if (s_msg[idx])
         free (s_msg[idx]);
-    if (sm)
+    if (sm && *sm)
         s_msg[idx] = strdup (sm);
     else
         s_msg[idx] = NULL;
@@ -51,31 +56,70 @@ int fm_status_draw (int dat)
     for (i = 0; i < STATUS_H; i++)
     {
         if (c_msg[i] != -1)
-            SetFontColor (c_msg[i], 0x00000000);
+            SetFontColor (c_msg[i], BLACK);
         if (s_msg[i])
             DrawString (0, (PANEL_H + i) * 8, s_msg[i]);
     }
     return 0;
 }
 
+void fm_panel_select_all (struct fm_panel *p, char sel)
+{
+    if(!p) return;
+
+    p->sels = 0;
+
+    struct fm_file *ptr;
+    for (ptr = p->entries; ptr != NULL; ptr = ptr->next)
+    {
+        ptr->selected = sel;
+        if(sel) p->sels++;
+    }
+}
+
+void fm_toggle_selection (struct fm_panel *p)
+{
+    if (!p) return;
+
+    if (p->path)
+    {
+        p->current->selected ^= 1;
+        if(p->current->selected)
+           p->sels++;
+        else
+           p->sels--;
+    }
+}
+
 //enter current dir
 int fm_panel_enter (struct fm_panel *p)
 {
+    if (!p || !p->current) return -1;
+
     int ret;
     //can't enter file
     if (!p->current->dir)
         return -1;
     //move deeper
     char np[CBSIZE];
-    if (p->path && *p->path)
-        snprintf (np, CBSIZE, "%s/%s", p->path, p->current->name);
-    else
+    if (p->path)
+    {
+		if (strlen(p->current->name) == 2 && !strncmp(p->current->name, "..", 2)) { fm_panel_exit (p); return 0; }
+        if (p->current && p->current->name && *(p->current->name))
+            snprintf (np, CBSIZE, "%s/%s", p->path, p->current->name);
+        else
+            snprintf (np, CBSIZE, "%s", p->path);
+    }
+    else if (p->current && p->current->name && *(p->current->name))
         snprintf (np, CBSIZE, "%s", p->current->name);
+    else
+        *np = 0;
+
     ret = fm_panel_scan (p, np);
-    if (0 == ret)
+    if (ret == 0)
     {
         //add to navigation history
-        fm_entry_add (&p->history, np, 1, 0);
+        if(p) fm_entry_add (&p->history, np, 1, 0);
         NPrintf ("navi add: %s\n", np);
     }
     return ret;
@@ -84,6 +128,8 @@ int fm_panel_enter (struct fm_panel *p)
 //exit current dir
 int fm_panel_exit (struct fm_panel *p)
 {
+    if (!p) return -1;
+
     int ret;
     char np[CBSIZE];
     char lp[CBSIZE];
@@ -94,9 +140,12 @@ int fm_panel_exit (struct fm_panel *p)
     if (current)
     {
         // move to the end of the list
-        while (current->next != NULL)
+        while (current && current->next)
             current = current->next;
-        //
+    }
+    //
+    if (current)
+    {
         NPrintf("navi from [%s] to [%s]\n", current->name, current->prev?current->prev->name:"none");
         //remove last entry
         if (current->name)
@@ -107,12 +156,14 @@ int fm_panel_exit (struct fm_panel *p)
         if (current->prev)
         {
             snprintf (np, CBSIZE, "%s", current->prev->name);
-            current->prev->next = NULL;
+            if (current->prev->next)
+                current->prev->next = NULL;
         }
         //was this the last one?
         if (current == list)
             p->history = NULL;
-        free (current);
+        //
+        if(current) free (current);
     }
     //can't return from here on root with no FS
     if (!p->path)
@@ -133,6 +184,7 @@ int fm_panel_exit (struct fm_panel *p)
     else
         ret = fm_panel_scan (p, NULL);
 #else
+/*
     char *lp = strrchr (p->path, '/');
     if (lp)
     {
@@ -150,6 +202,7 @@ int fm_panel_exit (struct fm_panel *p)
     ret = fm_panel_scan (p, np);
     //
     NPrintf ("panel exit to %s\n", np);
+*/
 #endif
     //
     return ret;
@@ -157,13 +210,15 @@ int fm_panel_exit (struct fm_panel *p)
 
 int fm_panel_clear (struct fm_panel *p)
 {
+    if(!p) return -1;
+
     struct fm_file *ptr;
     for (ptr = p->entries; ptr != NULL; ptr = p->entries)
     {
         p->entries = ptr->next;
         if (ptr->name)
             free (ptr->name);
-        free (ptr);
+        if(ptr) free (ptr);
     }
     p->current = NULL;
     p->current_idx = -1;
@@ -171,19 +226,22 @@ int fm_panel_clear (struct fm_panel *p)
     p->files = 0;
     p->dirs = 0;
     p->fsize = 0;
+    p->sels = 0;
     //
     return 0;
 }
 
 int fm_job_clear (struct fm_job *job)
 {
+    if(!job) return -1;
+
     struct fm_file *ptr;
     for (ptr = job->entries; ptr != NULL; ptr = job->entries)
     {
         job->entries = ptr->next;
         if (ptr->name)
             free (ptr->name);
-        free (ptr);
+        if(ptr) free (ptr);
     }
     //
     if (job->spath)
@@ -202,6 +260,8 @@ int fm_job_clear (struct fm_job *job)
 
 int fm_job_list (char *path)
 {
+    if (!path || !*path) return -1;
+
     struct fm_job fmjob;
     struct fm_job *job = &fmjob;
     //
@@ -219,7 +279,7 @@ int fm_job_list (char *path)
     fs_job_scan (job);
     char lp[256];
     snprintf (lp, 256, "job scan %dfiles, %ddirs, %llubytes", job->files, job->dirs, job->fsize);
-    fm_status_set (lp, 0, 0xeeeeeeFF);
+    fm_status_set (lp, 0, WHITE);
     //
     #if 1
     struct fm_file *ptr;
@@ -236,6 +296,13 @@ int fm_job_list (char *path)
 
 int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long ssz, int (*ui_render)(int dt))
 {
+    if (!src || !dst) return -1;
+
+    if(strcmp(src, dst) == 0)
+    {
+        NPrintf ("!fm_file_copy same source & destination %s\n", src);
+        return -1;
+    }
     FATFS fs;      /* Work area (filesystem object) for logical drives */
     int fsx = 0;
     BYTE *buffer = NULL;    // File copy buffer
@@ -251,9 +318,9 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
     //prep copy buffer
     #define BSZ (3*MBSZ)
     buffer = malloc (BSZ);
-    if (buffer == NULL)
+    if (!buffer)
     {
-        NPrintf ("!failed to allocate buffer of %dbytes\n", BSZ);
+        NPrintf ("!fm_file_copy: failed to allocate buffer of %dbytes\n", BSZ);
         return -1;
     }
     //prepare source
@@ -279,24 +346,20 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
             if (sysFsOpen (src, SYS_O_RDONLY, &f2src, NULL, 0))
             {
                 NPrintf ("!fm_file_copy: SYS src open %s\n", src);
-	            ret = -1;
+                ret = -1;
             }
             else
                 src_ok = 1;
         }
         break;
         case FS_TEXT:
-        {
-            
-        }
-        break;
         case FS_TNTFS:
         {
             fd3src = ps3ntfs_open (src, O_RDONLY, 0);
             if (fd3src < 0)
             {
                 NPrintf ("!fm_file_copy: NTFS src open %s\n", src);
-	            ret = -1;
+                ret = -1;
             }
             else
                 src_ok = 1;
@@ -306,7 +369,7 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
     //errors?
     if (ret)
     {
-        free (buffer);
+        if(buffer) free (buffer);
         return ret;
     }
     //prepare destination
@@ -340,17 +403,13 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
         }
         break;
         case FS_TEXT:
-        {
-            
-        }
-        break;
         case FS_TNTFS:
         {
             fd3dst = ps3ntfs_open (dst, O_WRONLY | O_CREAT | O_TRUNC, 0);
             if (fd3dst < 0)
             {
                 NPrintf ("!fm_file_copy: NTFS dst create %s\n", dst);
-	            ret = -1;
+                ret = -1;
             }
             else
                 dst_ok = 1;
@@ -388,10 +447,6 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
                 }
                 break;
                 case FS_TEXT:
-                {
-                    
-                }
-                break;
                 case FS_TNTFS:
                 {
                     br = ps3ntfs_read (fd3src, (char *)buffer, (size_t)BSZ);
@@ -426,13 +481,9 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
                 }
                 break;
                 case FS_TEXT:
-                {
-                    
-                }
-                break;
                 case FS_TNTFS:
                 {
-                   bw = ps3ntfs_write (fd3dst, (char *)buffer, (size_t) br);
+                    bw = ps3ntfs_write (fd3dst, (char *)buffer, (size_t) br);
                 }
                 break;
             }
@@ -451,14 +502,14 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
             //performance
             uint mbps = (dsz / MBSZ) / (timee - times);
             //time left
-            //xM .. ySEC > tM .. ?SEC >> 
+            //xM .. ySEC > tM .. ?SEC >>
             uint etae = 0;
             if (ssz && mbps)
                 etae = (ssz - dsz) / MBSZ / mbps;
             //report stats
             u32 cprc = ssz ? dsz * 100 / ssz : 0;
             snprintf (lp, CBSIZE, "%uMB of %uMB (%u%%) %uMBps %usec left", (uint)(dsz/MBSZ), (uint)(ssz/MBSZ), cprc, mbps, etae);
-            fm_status_set (lp, 3, 0xffff00FF);
+            fm_status_set (lp, 3, YELLOW);
             //msgDialogProgressBarSetMsg (MSG_PROGRESSBAR_INDEX1, lp);
             ProgressBar2Update (cprc, lp);  //also handles flipping
             //4: 1 = OK, YES; 2 = NO/ESC/CANCEL; -1 = NONE
@@ -482,7 +533,7 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
         }//while read
     }//if all ok
     //
-    free (buffer);
+    if(buffer) free (buffer);
     //close files
     switch (srct)
     {
@@ -499,10 +550,6 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
         }
         break;
         case FS_TEXT:
-        {
-            
-        }
-        break;
         case FS_TNTFS:
         {
             if (src_ok)
@@ -531,10 +578,6 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
         }
         break;
         case FS_TEXT:
-        {
-            
-        }
-        break;
         case FS_TNTFS:
         {
             if (dst_ok)
@@ -554,14 +597,14 @@ int fm_file_copy (char *src, char *dst, char srct, char dstt, unsigned long long
     return ret;
 }
 
-int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
+int fm_job_copy (struct fm_panel *p, char *src, char *dst, int (*ui_render)(int dt))
 {
+    if (!p || !src || !dst || !*src || !*dst)
+        return -1;
+    //
     struct fm_job fmjob;
     struct fm_job *job = &fmjob;
     int ret = 0;
-    //
-    if (!src || !dst)
-        return -1;
     //
     job->spath = strdup (src);
     job->dpath = strdup (dst);
@@ -584,7 +627,7 @@ int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
         //we have a HUUUGE problem here, bail out
         fm_job_clear (job);
     }
-    free (job->spath);
+    if(job->spath) free (job->spath);
     job->spath = strdup (src);
     //
     char lp[CBSIZE];
@@ -599,12 +642,19 @@ int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
     //freeSize = (((u64)vfs.f_bsize * vfs.f_bfree));
     //FAT
     //
-    snprintf (lp, CBSIZE, "Do you want to copy the selected files and folders?\n\n%u items, %uMB", job->files + job->dirs, (uint)(job->fsize/MBSZ));
-    if (1 != YesNoDialog (lp))
-        return fm_job_clear (job);
+    if(p->sels == 0)
+    {
+        if(job->files)
+          snprintf (lp, CBSIZE, "Do you want to copy the selected file of %uMB?", (uint)(job->fsize/MBSZ));
+        else
+          snprintf (lp, CBSIZE, "Do you want to copy the selected folder?\n\n%u items, %uMB", job->dirs, (uint)(job->fsize/MBSZ));
+
+        if (1 != YesNoDialog (lp))
+            return fm_job_clear (job);
+    }
     //
     snprintf (lp, CBSIZE, "copy job: %dfiles, %ddirs, %lluMB to %s", job->files, job->dirs, job->fsize/MBSZ, job->dpath);
-    fm_status_set (lp, 0, 0xeeeeeeFF);
+    fm_status_set (lp, 0, WHITE);
     DoubleProgressBarDialog (lp);
     //copy file from source to dest
     struct fm_file *ptr;
@@ -643,7 +693,7 @@ int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
         if (strcmp (dp, ptr->name) == 0)
         {
             snprintf (lp, CBSIZE, "job: same file/dir, skip %s", dp);
-            fm_status_set (lp, 2, 0xffff00FF);
+            fm_status_set (lp, 2, YELLOW);
         }
         else
         {
@@ -675,10 +725,6 @@ int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
                     }
                     break;
                     case FS_TEXT:
-                    {
-                        
-                    }
-                    break;
                     case FS_TNTFS:
                     {
                         if ((ret = ps3ntfs_mkdir (dp, 0777)))
@@ -690,7 +736,7 @@ int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
             }
             else
             {
-                snprintf (lp, CBSIZE, "copy file to %s", dp);
+                snprintf (lp, CBSIZE, "Copy file to %s", dp);
                 fm_status_set (lp, 2, 0xffffeeFF);
                 //copy file
                 ret = fm_file_copy (ptr->name, dp, job->stype, job->dtype, ptr->size, ui_render);
@@ -699,8 +745,8 @@ int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
         if (ret == -2)
         {
             //canceled
-            snprintf (lp, CBSIZE, "copy job CANCELED");
-            fm_status_set (lp, 3, 0xffff00FF);
+            snprintf (lp, CBSIZE, "Copy job CANCELED");
+            fm_status_set (lp, 3, YELLOW);
             break;
         }
         //
@@ -718,8 +764,8 @@ int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
         if (NPad (BUTTON_CIRCLE))
         {
             //canceled
-            snprintf (lp, CBSIZE, "copy job CANCELED");
-            fm_status_set (lp, 3, 0xffff00FF);
+            snprintf (lp, CBSIZE, "Copy job CANCELED");
+            fm_status_set (lp, 3, YELLOW);
             break;
         }
         #endif
@@ -734,6 +780,8 @@ int fm_job_copy (char *src, char *dst, int (*ui_render)(int dt))
 
 int fm_job_rename (char *path, char *old, char *new)
 {
+    if(!path || !old || !new) return -1;
+
     int nsp = 0, ret = 0;
     char lp[CBSIZE];
     char op[CBSIZE];
@@ -754,7 +802,7 @@ int fm_job_rename (char *path, char *old, char *new)
             if ((ret = f_rename (op, np)))
                 NPrintf ("!fm_job_rename: FAT can't rename %s to %s in %s res %d\n", op, np, npath, ret);
             snprintf (lp, CBSIZE, "job: FAT rename %s to %s in %s: %s", old, new, npath, ret?"KO":"OK");
-            fm_status_set (lp, 3, ret?0xff0000FF:0x00ff00FF);
+            fm_status_set (lp, 3, ret?RED:GREEN);
             //unmount
             f_mount (0, npath, 0);
         }
@@ -772,17 +820,13 @@ int fm_job_rename (char *path, char *old, char *new)
             //sysLv2FsChmod (op, FS_S_IFDIR | 0777);
             //sysLv2FsChmod (op, FS_S_IFMT | 0777);
             if ((ret = sysLv2FsRename (op, np)))
-                NPrintf ("!fm_job_delete: SYS can't rename %s to %s in %s res %d\n", old, new, npath, ret);
+                NPrintf ("!fm_job_rename: SYS can't rename %s to %s in %s res %d\n", old, new, npath, ret);
             //
             snprintf (lp, CBSIZE, "job: SYS rename %s to %s in %s: %s", old, new, npath, ret?"KO":"OK");
-            fm_status_set (lp, 3, ret?0xff0000FF:0x00ff00FF);
+            fm_status_set (lp, 3, ret?RED:GREEN);
         }
         break;
         case FS_TEXT:
-        {
-            
-        }
-        break;
         case FS_TNTFS:
         {
             char *npath = path + nsp;
@@ -794,10 +838,10 @@ int fm_job_rename (char *path, char *old, char *new)
             snprintf (np, CBSIZE, "%s/%s", npath, new);
             //
             if ((ret = ps3ntfs_rename (op, np)))
-                NPrintf ("!fm_job_delete: NTFS can't rename %s to %s in %s res %d\n", old, new, npath, ret);
+                NPrintf ("!fm_job_rename: NTFS can't rename %s to %s in %s res %d\n", old, new, npath, ret);
             //
             snprintf (lp, CBSIZE, "job: NTFS rename %s to %s in %s: %s", old, new, npath, ret?"KO":"OK");
-            fm_status_set (lp, 3, ret?0xff0000FF:0x00ff00FF);
+            fm_status_set (lp, 3, ret?RED:GREEN);
         }
         break;
     }        //
@@ -806,6 +850,8 @@ int fm_job_rename (char *path, char *old, char *new)
 
 int fm_job_newdir (char *path, char *new)
 {
+    if(!path || !new) return -1;
+
     int nsp = 0, ret = 0;
     char lp[CBSIZE];
     char np[CBSIZE];
@@ -822,9 +868,9 @@ int fm_job_newdir (char *path, char *new)
             snprintf (np, CBSIZE, "%s/%s", npath, new);
             //rename
             if ((ret = f_mkdir (np)))
-                NPrintf ("!fm_job_rename: FAT can't mkdir %s in %s res %d\n", np, npath, ret);
+                NPrintf ("!fm_job_newdir: FAT can't mkdir %s in %s res %d\n", np, npath, ret);
             snprintf (lp, CBSIZE, "job: FAT mkdir %s in %s: %s", new, npath, ret?"KO":"OK");
-            fm_status_set (lp, 3, ret?0xff0000FF:0x00ff00FF);
+            fm_status_set (lp, 3, ret?RED:GREEN);
             //unmount
             f_mount (0, npath, 0);
         }
@@ -841,17 +887,13 @@ int fm_job_newdir (char *path, char *new)
             //sysLv2FsChmod (op, FS_S_IFDIR | 0777);
             //sysLv2FsChmod (op, FS_S_IFMT | 0777);
             if ((ret = sysLv2FsMkdir (np, 0777)))
-                NPrintf ("!fm_job_delete: SYS can't mkdir %s in %s res %d\n", new, npath, ret);
+                NPrintf ("!fm_job_newdir: SYS can't mkdir %s in %s res %d\n", new, npath, ret);
             //
             snprintf (lp, CBSIZE, "job: SYS mkdir %s in %s: %s", new, npath, ret?"KO":"OK");
-            fm_status_set (lp, 3, ret?0xff0000FF:0x00ff00FF);
+            fm_status_set (lp, 3, ret?RED:GREEN);
         }
         break;
         case FS_TEXT:
-        {
-            
-        }
-        break;
         case FS_TNTFS:
         {
             char *npath = path + nsp;
@@ -865,15 +907,17 @@ int fm_job_newdir (char *path, char *new)
                 NPrintf ("!fm_job_delete: NTFS can't mkdir %s in %s res %d\n", new, npath, ret);
             //
             snprintf (lp, CBSIZE, "job: NTFS mkdir %s in %s: %s", new, npath, ret?"KO":"OK");
-            fm_status_set (lp, 3, ret?0xff0000FF:0x00ff00FF);
+            fm_status_set (lp, 3, ret?RED:GREEN);
         }
         break;
     }        //
     return ret;
 }
 
-int fm_job_delete (char *src, int (*ui_render)(int dt))
+int fm_job_delete (struct fm_panel *p, char *src, int (*ui_render)(int dt))
 {
+    if(!p || !src || !*src) return -1;
+
     struct fm_job fmjob;
     struct fm_job *job = &fmjob;
     int ret;
@@ -902,16 +946,22 @@ int fm_job_delete (char *src, int (*ui_render)(int dt))
         //we have a HUUUGE problem here, bail out
         fm_job_clear (job);
     }
-    free (job->spath);
+    if(job->spath) free (job->spath);
     job->spath = strdup (src);
     //
     char lp[CBSIZE];
     //remove files - 2do: show dialog box for confirmation
-    snprintf (lp, CBSIZE, "Do you want to delete the selected Files and Folders?\n\n%u items, %uMB", job->files + job->dirs, (uint)(job->fsize/MBSZ));
-    if (1 != YesNoDialog(lp))
-        return fm_job_clear (job);
+    if(p->sels == 0)
+    {
+        if(job->files)
+          snprintf (lp, CBSIZE, "Do you want to delete the selected file of %uMB?", (uint)(job->fsize/MBSZ));
+        else
+          snprintf (lp, CBSIZE, "Do you want to delete the selected folder?\n\n%u items, %uMB", job->dirs, (uint)(job->fsize/MBSZ));
+        if (1 != YesNoDialog(lp))
+            return fm_job_clear (job);
+    }
     snprintf (lp, CBSIZE, "delete job: %dfiles, %ddirs, %lluMB from %s", job->files, job->dirs, job->fsize/MBSZ, job->spath);
-    fm_status_set (lp, 0, 0xeeeeeeFF);
+    fm_status_set (lp, 0, WHITE);
     DoubleProgressBarDialog (lp);
     //
     struct fm_file *ptr, *ptail = NULL;
@@ -925,15 +975,21 @@ int fm_job_delete (char *src, int (*ui_render)(int dt))
     //reverse removal
     for (ptr = ptail; ptr != NULL; ptr = ptr->prev)
     {
+        if(!ptr->name) continue;
+
         lbp = strrchr (ptr->name, '/'); //file/dir name
         if (lbp)
             lbp++;
         else
             lbp = na_string;
+
+        if(!lbp) continue;
+
         if (ptr->dir)
             snprintf (lp, CBSIZE, "task %d/%d delete dir %s", ktr, job->files + job->dirs, lbp);
         else
             snprintf (lp, CBSIZE, "task %d/%d delete file %s", ktr, job->files + job->dirs, lbp);
+
         fm_status_set (lp, 1, 0xffeeeeFF);
         ProgressBarUpdate ((u32)(ktr * 100/(job->files + job->dirs)), lp);
         NPrintf ("%s\n", lp);
@@ -972,14 +1028,10 @@ int fm_job_delete (char *src, int (*ui_render)(int dt))
                         NPrintf ("!fm_job_delete: SYS can't remove file %s, res %d\n", ptr->name, ret);
                 }
                 snprintf (lp, CBSIZE, "job: SYS delete file/dir %s - %s", ptr->name, ret?"KO":"OK");
-                fm_status_set (lp, 3, ret?0xff0000FF:0x00ff00FF);
+                fm_status_set (lp, 3, ret?RED:GREEN);
             }
             break;
             case FS_TEXT:
-            {
-                
-            }
-            break;
             case FS_TNTFS:
             {
                 snprintf (lp, CBSIZE, "job: NTFS delete file/dir %s", ptr->name);
@@ -989,7 +1041,7 @@ int fm_job_delete (char *src, int (*ui_render)(int dt))
                     NPrintf ("!fm_job_delete: NTFS can't remove file %s, res %d\n", ptr->name, ret);
                 //
                 snprintf (lp, CBSIZE, "job: NTFS delete file/dir %s - %s", ptr->name, ret?"KO":"OK");
-                fm_status_set (lp, 3, ret?0xff0000FF:0x00ff00FF);
+                fm_status_set (lp, 3, ret?RED:GREEN);
             }
             break;
         }        //
@@ -1009,7 +1061,7 @@ int fm_job_delete (char *src, int (*ui_render)(int dt))
         {
             //canceled
             snprintf (lp, CBSIZE, "delete job CANCELED");
-            fm_status_set (lp, 3, 0xffff00FF);
+            fm_status_set (lp, 3, YELLOW);
             break;
         }
         #endif
@@ -1024,6 +1076,8 @@ int fm_job_delete (char *src, int (*ui_render)(int dt))
 
 int fm_entry_add (struct fm_file **entries, char *fn, char dir, unsigned long fsz)
 {
+    if(!fn || !*fn) return -1;
+
     // Allocate memory for new node;
     struct fm_file *list = *entries;
     struct fm_file *link = (struct fm_file*) malloc (sizeof (struct fm_file));
@@ -1048,10 +1102,13 @@ int fm_entry_add (struct fm_file **entries, char *fn, char dir, unsigned long fs
     {
         struct fm_file *current = list;
         // move to the end of the list
-        while (current->next != NULL)
-            current = current->next;
+        if(current)
+        {
+            while (current && current->next)
+                current = current->next;
+        }
         // Insert link at the end of the list
-        current->next = link;
+        if(current) current->next = link;
         link->prev = current;
     }
     return 0;
@@ -1064,23 +1121,30 @@ int fm_entry_pull (struct fm_file **entries)
     if (current)
     {
         // move to the end of the list
-        while (current->next != NULL)
+        while (current && current->next)
             current = current->next;
+    }
+    if (current)
+    {
         //remove last entry
         if (current->name)
             free (current->name);
-        current->prev->next = NULL;
+        if (current->prev)
+            if (current->prev->next)
+                current->prev->next = NULL;
         //was this the last one?
         if (current == list)
             *entries = NULL;
-        free (current);
+        if(current) free (current);
     }
     return 0;
 }
 
 int fm_job_add (struct fm_job *p, char *fn, char dir, unsigned long fsz)
 {
-    if (0 == fm_entry_add (&p->entries, fn, dir, fsz))
+    if(!p || !fn) return -1;
+
+    if (fm_entry_add (&p->entries, fn, dir, fsz) == 0)
     {
         //
         NPrintf ("fm_job_add %d>%s\n", dir, fn);
@@ -1099,6 +1163,8 @@ int fm_job_add (struct fm_job *p, char *fn, char dir, unsigned long fsz)
 
 int fm_panel_reload (struct fm_panel *p)
 {
+    if(!p) return -1;
+
     //cleanup
     fm_panel_clear (p);
     //
@@ -1107,20 +1173,25 @@ int fm_panel_reload (struct fm_panel *p)
 
 int fm_panel_scan (struct fm_panel *p, char *path)
 {
+    if(!p) return -1;
+
     if (p->path)
         free (p->path);
-    if (path)
+    if (path && *path)
         p->path = strdup (path);
     else
         p->path = NULL;
     //cleanup
     fm_panel_clear (p);
     //
+
     return fs_path_scan (p);
 }
 
 int fm_panel_init (struct fm_panel *p, int x, int y, int w, int h, char act)
 {
+    if(!p) return -1;
+
     p->x = x;
     p->y = y;
     p->w = w;
@@ -1141,30 +1212,37 @@ int fm_panel_init (struct fm_panel *p, int x, int y, int w, int h, char act)
     return 0;
 }
 
+struct fm_panel *app_active_panel ();
+
 int fm_panel_draw (struct fm_panel *p)
 {
+    if(!p) return -1;
+
     static char fname[53];
-    int wh = p->h/8 - 2;    //scroll rows: panel height - 2 rows
+    int wh = p->h/FONT_H - 2;    //scroll rows: panel height - 2 rows
     int se = 0;             //skipped entries
+    bool is_active_panel = (app_active_panel() == p);
     //
+    DrawRect2d (0, p->y, 0, 2*p->w, FONT_H, TOP_PANEL);
     if (p->active == TRUE)
-        DrawRect2d (p->x, p->y, 0, p->w, p->h, 0xb4b4b4ff);
+        DrawRect2d (p->x, p->y+FONT_H, 0, p->w, p->h-FONT_H, ACTIVE_PANEL);
     else
-        DrawRect2d (p->x, p->y, 0, p->w, p->h, 0x787878ff);
+        DrawRect2d (p->x, p->y+FONT_H, 0, p->w, p->h-FONT_H, INACTIVE_PANEL);
+
     //draw panel content: 56 lines - 1 for dir path, 1 for status - 54
     int k;
     SetCurrentFont (2);
-    SetFontSize (8, 8);
+    SetFontSize (FONT_W, FONT_H);
     //title - current path
-    SetFontColor (0x0000ffff, 0x00000000);
+    SetFontColor (PATH_COLOR, BLACK);
     SetFontAutoCenter (0);
     if (p->path)
-        snprintf (fname, 51, "%s", p->path);
+        snprintf (fname, 51, "%s", (p->fs_type == FS_TSYS && p->path[5] == '/') ? (p->path + 5) : p->path); // display without "sys:/"
     else
         snprintf (fname, 51, "%s", "[root]");
     DrawString (p->x, p->y, fname);
     //
-    SetFontColor (0x000000ff, 0x00000000);
+    SetFontColor (is_active_panel ? FILES_COLOR : INACTIVE_TEXT , BLACK);
     SetFontAutoCenter (0);
     //
     struct fm_file *ptr = p->entries;
@@ -1174,13 +1252,23 @@ int fm_panel_draw (struct fm_panel *p)
     for (k = 0; k < wh && ptr != NULL; k++, ptr = ptr->next)
     {
         //draw current item
-        if (p->current == ptr)
+        if (p->current == ptr && is_active_panel)
         {
-            DrawRect2d (p->x, p->y + 8 + k * 8, 0, p->w, 8, 0x787878ff);
             //
-            fname[0] = '>';
+            if(is_active_panel && ++frame > 30)
+            {
+               fname[0] = (ptr->selected) ? '>' : ' ';
+               if(frame > 60) frame = 0;
+            }
+            else if (ptr->selected && p->active)
+               fname[0] = '*';
+            else
+            {
+               fname[0] = is_active_panel ? '>' : ' ';
+            }
             fm_fname_get (ptr, 51, fname + 1);
-            DrawString (p->x, p->y + 8 + k * 8, fname);
+            DrawRect2d (p->x, p->y + FONT_H + k * FONT_H, 0, p->w, FONT_H, SELECT_BAR);
+            DrawString (p->x, p->y + FONT_H + k * FONT_H, fname);
         }
         else
         {
@@ -1188,12 +1276,13 @@ int fm_panel_draw (struct fm_panel *p)
             {
                 fname[0] = '*';
                 fm_fname_get (ptr, 51, fname + 1);
-                DrawString (p->x, p->y + 8 + k * 8, fname);
+                DrawRect2d (p->x, p->y + FONT_H + k * FONT_H, 0, p->w, FONT_H, is_active_panel ? SELECTED_COLOR : INACTIVE_SELECT);
+                DrawString (p->x, p->y + FONT_H + k * FONT_H, fname);
             }
             else
             {
                 fm_fname_get (ptr, 51, fname);
-                DrawString (p->x + 8, p->y + 8 + k * 8, fname);
+                DrawString (p->x + FONT_W, p->y + FONT_H + k * FONT_H, fname);
             }
         }
         //file size - to the right side of the name
@@ -1205,11 +1294,11 @@ int fm_panel_draw (struct fm_panel *p)
                 snprintf (fname, 52, "%4luMB", ptr->size / MBSZ);
             else
                 snprintf (fname, 52, "%4luKB", ptr->size / KBSZ);
-            DrawString (p->x + 8 + (46 * 8), p->y + 8 + k * 8, fname);
+            DrawString (p->x + FONT_W + (46 * FONT_W), p->y + FONT_H + k * FONT_H, fname);
         }
     }
     //status - size, files, dirs
-    SetFontColor (0x0000ffff, 0x00000000);
+    SetFontColor (PATH_COLOR, BLACK);
     SetFontAutoCenter (0);
     if (p->path)
     {
@@ -1220,7 +1309,7 @@ int fm_panel_draw (struct fm_panel *p)
             snprintf (fname + bw, 51 - bw, "%llu MB", p->fsize / MBSZ);
         else
             snprintf (fname + bw, 51 - bw, "%llu KB", p->fsize / KBSZ);
-        DrawString (p->x, p->y + wh * 8 + 8, fname);
+        DrawString (p->x, p->y + wh * FONT_H + FONT_H, fname);
     }
     //
     return 0;
@@ -1228,22 +1317,24 @@ int fm_panel_draw (struct fm_panel *p)
 
 static int add_before (struct fm_panel *p, struct fm_file *link, struct fm_file *next)
 {
+    if(!next || !link) return -1;
+
     /* 4. Make prev of new node as prev of next_node */
-    link->prev = next->prev;  
-  
+    link->prev = next->prev;
+
     /* 5. Make the prev of next_node as new_node */
-    next->prev = link;  
-  
+    next->prev = link;
+
     /* 6. Make next_node as next of new_node */
-    link->next = next;  
-  
+    link->next = next;
+
     /* 7. Change next of new_node's previous node */
-    if (link->prev != NULL)  
-        link->prev->next = link;  
-    /* 8. If the prev of new_node is NULL, it will be 
+    if (link->prev != NULL)
+        link->prev->next = link;
+    /* 8. If the prev of new_node is NULL, it will be
        the new head node */
     else
-        (p->entries) = link; 
+        (p->entries) = link;
     return 0;
 }
 
@@ -1259,15 +1350,17 @@ int fm_fname_get (struct fm_file *link, int cw, char *out)
     return 0;
 }
 
-int fm_panel_locate (struct fm_panel *p, char *path)
+int fm_panel_locate (struct fm_panel *p, char *name)
 {
+    if(!p || !name) return -1;
+
     struct fm_file *ptr;
     int cidx = -1;
     for (ptr = p->entries; ptr != NULL; ptr = ptr->next)
     {
         cidx++;
-        NPrintf ("locate %s vs %s\n", path, ptr->name);
-        if (0 == strcmp (ptr->name, path))
+        NPrintf ("locate %s vs %s\n", name, ptr->name);
+        if (ptr->name && strcmp (ptr->name, name) == 0)
         {
             p->current = ptr;
             p->current_idx = cidx;
@@ -1279,9 +1372,11 @@ int fm_panel_locate (struct fm_panel *p, char *path)
 
 int fm_panel_scroll (struct fm_panel *p, int dn)
 {
+    if(!p) return -1;
+
     if (dn)
     {
-        if (p->current->next != NULL)
+        if (p->current->next)
         {
             p->current = p->current->next;
             p->current_idx++;
@@ -1291,7 +1386,7 @@ int fm_panel_scroll (struct fm_panel *p, int dn)
     }
     else
     {
-        if (p->current->prev != NULL)
+        if (p->current->prev)
         {
             p->current = p->current->prev;
             p->current_idx--;
@@ -1304,6 +1399,8 @@ int fm_panel_scroll (struct fm_panel *p, int dn)
 
 int fm_panel_add (struct fm_panel *p, char *fn, char dir, unsigned long fsz)
 {
+    if(!p || !fn || !*fn) return -1;
+
     // Allocate memory for new node;
     struct fm_file *link = (struct fm_file*) malloc (sizeof (struct fm_file));
     if (!link)
@@ -1336,55 +1433,63 @@ int fm_panel_add (struct fm_panel *p, char *fn, char dir, unsigned long fsz)
     #if 1
         if (dir)
         {
-            while (current->next && current->dir && strcmp (current->name, fn) < 0)
-                current = current->next;
+            while (current && current->next && current->dir && current->name && strcmp (current->name, fn) < 0)
+                 current = current->next;
             //don't add after file
-            if (current->next == NULL && current->dir)
+            if(current)
             {
-                if (strcmp (current->name, fn) < 0)
+                if (current->next == NULL && current->dir)
                 {
-                    current->next = link;
-                    link->prev = current;
+                    if (current->name && strcmp (current->name, fn) < 0)
+                    {
+                        current->next = link;
+                        link->prev = current;
+                    }
+                    else
+                    {
+                        add_before (p, link, current);
+                    }
                 }
                 else
                 {
+                    //NPrintf ("fm_panel_add before %s\n", current->name);
                     add_before (p, link, current);
                 }
-            }
-            else
-            {
-                //NPrintf ("fm_panel_add before %s\n", current->name);
-                add_before (p, link, current);
             }
         }
         else
         {
             //skip dirs
-            while (current->next && current->dir)
+            while (current && current->next && current->dir)
                 current = current->next;
             //compare only with files
-            if (!current->dir && strcmp (current->name, fn) < 0)
-                while (current->next && strcmp (current->name, fn) < 0)
-                    current = current->next;
+            while (current && current->next && !current->dir && current->name && strcmp (current->name, fn) < 0)
+                current = current->next;
             //
-            if (strcmp (current->name, fn) > 0)
+            if(current)
             {
-                //NPrintf ("fm_panel_add before %s\n", current->name);
-                add_before (p, link, current);
-            }
-            else
-            //if (current->next == NULL)
-            {
-                current->next = link;
-                link->prev = current;
+                if (!current->dir && current->name && strcmp (current->name, fn) > 0)
+                {
+                    //NPrintf ("fm_panel_add before %s\n", current->name);
+                    add_before (p, link, current);
+                }
+                else
+                //if (current->next == NULL)
+                {
+                    current->next = link;
+                    link->prev = current;
+                }
             }
         }
     #else
         // move to the end of the list
-        while (current->next != NULL)
-            current = current->next;
+        if(current)
+        {
+             while (current && current->next)
+                 current = current->next;
+        }
         // Insert link at the end of the list
-        current->next = link;
+        if(current) current->next = link;
         link->prev = current;
     #endif
     }
@@ -1397,32 +1502,42 @@ int fm_panel_add (struct fm_panel *p, char *fn, char dir, unsigned long fsz)
 
 int fm_panel_del (struct fm_panel *p, char *fn)
 {
+    if(!p || !fn) return -1;
+
     struct fm_file *pre_node;
 
     if(p->entries == NULL)
     {
         //printf("Linked List not initialized");
         return -1;
-    } 
+    }
     struct fm_file *current = p->entries;
     pre_node = current;
-    while (current->next != NULL && strcmp (current->name, fn) != 0) 
+    if(current)
     {
-        pre_node = current;
-        current = current->next;
-    }        
+        while (current && current->next && current->name && strcmp (current->name, fn) != 0)
+        {
+            pre_node = current;
+            current = current->next;
+        }
+    }
 
-    if (strcmp (current->name, fn) == 0)
+    if(!pre_node || !current) return -1;
+
+    if (current->name && strcmp (current->name, fn) == 0)
     {
-        pre_node->next = pre_node->next->next;
-        if (pre_node->next != NULL)
-        {          // link back
-            pre_node->next->prev = pre_node;
+        if(pre_node->next)
+        {
+            pre_node->next = pre_node->next->next;
+            if (pre_node->next)
+            {          // link back
+                pre_node->next->prev = pre_node;
+            }
         }
         if (p->entries == current)
             p->entries = NULL;
-        free (current->name);
-        free (current);
+        if(current->name) free (current->name);
+        if(current) free (current);
     }
     return 0;
 }

@@ -38,8 +38,10 @@ static const DISC_INTERFACE *disc_ntfs[8]= {
 // mounts from /dev_usb000 to 007
 static ntfs_md *mounts[8] = {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL};
 //
-int ntfs_scan_path (struct fm_panel *p);
-int ntfs_job_scan (struct fm_job *p, char *path);
+static int ntfs_scan_path (struct fm_panel *p);
+static int ntfs_job_scan (struct fm_job *p, char *path);
+#define ext_scan_path	ntfs_scan_path
+#define ext_job_scan	ntfs_job_scan
 //-----------------------------------------------------------------------------
 
 //sys fs
@@ -72,11 +74,11 @@ static int fs_fat_k = 0;
 static int fs_ext_k = 0;
 static int fs_ntfs_k = 0;
 
-int sys_scan_path (struct fm_panel *p);
-int fat_scan_path (struct fm_panel *p);
+static int sys_scan_path (struct fm_panel *p);
+static int fat_scan_path (struct fm_panel *p);
 
-int sys_job_scan (struct fm_job *p, char *path);
-int fat_job_scan (struct fm_job *p, char *path);
+static int sys_job_scan (struct fm_job *p, char *path);
+static int fat_job_scan (struct fm_job *p, char *path);
 /*
 sysFsGetFreeSize("/dev_hdd0/", &blockSize, &freeSize);
 sprintf(filename, "/dev_usb00%c/", 47+find_device);
@@ -90,9 +92,9 @@ if(find_device==11) sprintf(filename, "/dev_bdvd");
     if(is_ntfs) {pdir = ps3ntfs_diropen(path); if(pdir) ret = 0; else ret = -1; }
     else ret=sysLv2FsOpenDir(path, &dfd);
 
-    while ((!is_ntfs && !sysLv2FsReadDir(dfd, &dir, &read)) 
+    while ((!is_ntfs && !sysLv2FsReadDir(dfd, &dir, &read))
         || (is_ntfs && ps3ntfs_dirnext(pdir, dir.d_name, &st) == 0)) {
-    
+
 	if(is_ntfs) ps3ntfs_dirclose(pdir); else sysLv2FsCloseDir(dfd);
 //file
     ret = sysLv2FsOpen(path, 0, &fd, S_IRWXU | S_IRWXG | S_IRWXO, NULL, 0);
@@ -114,6 +116,7 @@ int fs_get_fstype (char *path, int *np)
 {
     if (!path)
         return FS_TNONE;
+
     //FAT/ExFAT path
     if (strncmp (path, "fat", 3) == 0)
     {
@@ -126,10 +129,7 @@ int fs_get_fstype (char *path, int *np)
     {
         if (np)
             *np = 0; //ext and ntfs need this prefix
-        //return FS_TEXT;
-        // NTFS driver is covering EXT access
-        // rest of code can be cleaned-up
-        return FS_TNTFS;
+        return FS_TEXT;
     }
     //NTFS path
     else if (strncmp (path, "ntfs", 4) == 0)
@@ -181,7 +181,7 @@ int fs_job_scan (struct fm_job *job)
         //else if (strncmp (job->spath, "ext", 3) == 0)
         case FS_TEXT:
         {
-            return 1;//ext_scan_path (p);
+            return ext_job_scan (job, job->spath);
         }
         //scan NTFS path
         //else if (strncmp (job->spath, "ntfs", 4) == 0)
@@ -222,7 +222,7 @@ static int _detach_fs (int k, char *flag, int *fsk)
     rootfs[k].fs_type = FS_TNONE;
     rootfs[k].fs_parts = -1;
     rootfs[k].fs_idx = -1;
-    free (rootfs[k].fs);
+    if(rootfs[k].fs) free (rootfs[k].fs);
     rootfs[k].fs = NULL;
     //
     int lk = *fsk;
@@ -255,21 +255,6 @@ int rootfs_probe ()
                 FATFS fs;       /* Work area (filesystem object) for logical drive */
                 if (f_mount (&fs, path, 0) == FR_OK)
                 {
-                    //todo: maybe use the same approach as in PS3_NTFS_IsInserted
-                    /*
-                    int r;
-                    device_info_t disc_info;
-                    disc_info.unknown03 = 0x12345678; // hack for Iris Manager Disc Less
-                    r = sys_storage_get_device_info (id, &disc_info);
-                    if (r < 0) 
-                    {
-                        if (r == 0x80010002) 
-                        {
-                            PS3_NTFS_Shutdown (fd);
-                        }
-                        return false;
-                    }
-                    */
                     if (f_opendir (&dir, path) == FR_OK)
                     {
                         f_closedir (&dir);
@@ -286,7 +271,7 @@ int rootfs_probe ()
                 continue;
             }
             //NTFS
-            if (fs_ntfs_k && rootfs[k].fs_type == FS_TNTFS)
+            if (fs_ntfs_k && (rootfs[k].fs_type == FS_TNTFS || rootfs[k].fs_type == FS_TEXT))
             {
                 if (rootfs[k].fs_parts > 0 && !PS3_NTFS_IsInserted (k))
                 {
@@ -300,25 +285,18 @@ int rootfs_probe ()
                                 (mounts[k] + j)->name[0] = 0;
                             }
                         free (mounts[k]);
-                        mounts[k]= NULL;
+                        mounts[k] = NULL;
                     }
                     // PS3_NTFS_IsInserted calls PS3_NTFS_Shutdown on failure.. anyway
                     PS3_NTFS_Shutdown (k);
-                    NPrintf ("rootfs_probe detach NTFS %d on dev %d fs: %s\n", rootfs[k].fs_idx, k, rootfs[k].fs);
+                    NPrintf ("rootfs_probe detach %s on dev %d (%d)\n", rootfs[k].fs, k, rootfs[k].fs_idx);
                     //no longer valid - detach
-                    _detach_fs (k, &flag, &fs_ntfs_k);
+                    if(rootfs[k].fs_type == FS_TEXT)
+                        _detach_fs (k, &flag, &fs_ext_k);
+                    else
+                        _detach_fs (k, &flag, &fs_ntfs_k);
                     continue;
                 } //mount count > 0
-            }
-            //EXT
-            if (fs_ext_k && rootfs[k].fs_type == FS_TEXT)
-            {
-                if (0)
-                {
-                    //no longer valid - detach
-                    _detach_fs (k, &flag, &fs_ext_k);
-                    continue;
-                }
             }
         }
     }
@@ -345,7 +323,7 @@ int rootfs_probe ()
                 NPrintf ("!rootfs_probe attach fat%d: on dev %d, res %d, res2 %d\n", fs_fat_k, k, res, res2);
             }
             //probe NTFS
-            if (1)
+            if (mounts[k] == NULL)
             {
                 int ntfsParts = ntfsMountDevice (disc_ntfs[k], &mounts[k], NTFS_DEFAULT | NTFS_RECOVER);
                 NPrintf ("rootfs_probe attach ntfs%d: on dev %d, count %d\n", fs_ntfs_k, k, ntfsParts);
@@ -356,8 +334,11 @@ int rootfs_probe ()
                     if((mounts[k])->name[0])
                     {
                         snprintf (devfs, 14, "%s:/", (mounts[k])->name);
-                        _attach_fs (k, &flag, &fs_ntfs_k, FS_TNTFS, devfs);
-                        NPrintf ("rootfs_probe attach ntfs%d: on dev %d as %s\n", rootfs[k].fs_idx, k, rootfs[k].fs);
+                        if(!strncmp((mounts[k])->name, "ext", 3))
+                            _attach_fs (k, &flag, &fs_ext_k, FS_TEXT, devfs);
+                        else
+                            _attach_fs (k, &flag, &fs_ntfs_k, FS_TNTFS, devfs);
+                        NPrintf ("rootfs_probe attach %s: on dev %d (%d)\n", rootfs[k].fs, k, rootfs[k].fs_idx);
                         #if 0
                         //stat for free space
                         struct statvfs vfs;
@@ -365,7 +346,7 @@ int rootfs_probe ()
                         snprintf (devfs, 14, "/%s:/", (mounts[k])->name);
                         if (!ps3ntfs_statvfs (devfs, &vfs) < 0)
                             freeSpace = (((u64)vfs.f_bsize * vfs.f_bfree));
-                        NPrintf ("rootfs_probe attach ntfs%d: on dev %d as %s, free %lluMB\n", rootfs[k].fs_idx, k, rootfs[k].fs, freeSpace/MBSZ);
+                        NPrintf ("rootfs_probe attach %s: on dev %d (%d), free %lluMB\n", rootfs[k].fs, k, rootfs[k].fs_idx, freeSpace/MBSZ);
                         #endif
                     }
                     //move on, this is taken now
@@ -402,6 +383,8 @@ int fs_path_scan (struct fm_panel *p)
         p->fs_type = FS_TNONE;
         return root_scan_path (p);
     }
+
+	fm_panel_add (p, "..", 1, 0);
     p->fs_type = fs_get_fstype (p->path, NULL);
     switch (p->fs_type)
     {
@@ -416,7 +399,7 @@ int fs_path_scan (struct fm_panel *p)
         //else if (strncmp (p->path, "ext", 3) == 0)
         case FS_TEXT:
         {
-            return 1;//ext_scan_path (p);
+            return ext_scan_path (p);
         }
         //scan NTFS path
         //else if (strncmp (p->path, "ntfs", 4) == 0)
@@ -434,8 +417,10 @@ int fs_path_scan (struct fm_panel *p)
     return 0;
 }
 
-int sys_scan_path (struct fm_panel *p)
+static int sys_scan_path (struct fm_panel *p)
 {
+    if (!p->path) return -1;
+
     char lp[256];
 	int dfd;
 	u64 read;
@@ -445,7 +430,7 @@ int sys_scan_path (struct fm_panel *p)
     if (res)
     {
         NPrintf ("!failed sysLv2FsOpenDir path %s, res %d\n", p->path, res);
-		return res;
+        return 0; //res;
     }
     for (; !sysLv2FsReadDir (dfd, &dir, &read); )
     {
@@ -475,8 +460,10 @@ int sys_scan_path (struct fm_panel *p)
     return 0;
 }
 
-int fat_scan_path (struct fm_panel *p)
+static int fat_scan_path (struct fm_panel *p)
 {
+    if (!p->path) return -1;
+
     char lp[256];
     FRESULT res = 0;
     FDIR dir;
@@ -495,13 +482,13 @@ int fat_scan_path (struct fm_panel *p)
         for (;;)
         {
             FRESULT res1 = f_readdir (&dir, &fno);                   /* Read a directory item */
-            if (res1 != FR_OK || fno.fname[0] == 0) 
+            if (res1 != FR_OK || fno.fname[0] == 0)
                 break;  /* Break on error or end of dir */
-            if (fno.fattrib & AM_DIR) 
+            if (fno.fattrib & AM_DIR)
             {                    /* It is a directory */
                 fm_panel_add (p, fno.fname, 1, 0);
-            } 
-            else 
+            }
+            else
             {                                       /* It is a file. */
                 snprintf (lp, 255, "%s/%s", lpath, fno.fname);
                 //NPrintf ("FAT f_stat for '%s', res %d\n", lp, res);
@@ -522,8 +509,10 @@ int fat_scan_path (struct fm_panel *p)
     return res;
 }
 
-int ntfs_scan_path (struct fm_panel *p)
+static int ntfs_scan_path (struct fm_panel *p)
 {
+    if (!p->path) return -1;
+
     char lp[256];
     DIR_ITER *pdir = NULL;
     sysFSDirent dir;
@@ -546,7 +535,7 @@ int ntfs_scan_path (struct fm_panel *p)
                 // It is a directory
                 fm_panel_add (p, dir.d_name, 1, 0);
             }
-            else 
+            else
             {
                 // It is a file
                 snprintf (lp, 255, "%s/%s", p->path, dir.d_name);
@@ -567,12 +556,14 @@ int ntfs_scan_path (struct fm_panel *p)
     return 0;
 }
 
-int sys_job_scan (struct fm_job *p, char *path)
+static int sys_job_scan (struct fm_job *p, char *path)
 {
+    if (!path) return -1;
+
     char lp[256];
-	int dfd;
-	u64 read;
-	sysFSDirent dir;
+    int dfd;
+    u64 read;
+    sysFSDirent dir;
     sysFSStat stat;
     int res = sysLv2FsOpenDir (path, &dfd);
     if (res)
@@ -584,17 +575,17 @@ int sys_job_scan (struct fm_job *p, char *path)
         if (res >= 0)
             //fm_job_add (p, dir.d_name, 0, stat.st_size);
             fm_job_add (p, path, 0, stat.st_size);
-		return res;
+        return res;
     }
     //add dir
     fm_job_add (p, path, 1, 0);
     //
     for (; !sysLv2FsReadDir (dfd, &dir, &read); )
     {
-		if (!read)
-			break;
-		if (!strcmp (dir.d_name, ".") || !strcmp (dir.d_name, ".."))
-			continue;
+        if (!read)
+            break;
+        if (!strcmp (dir.d_name, ".") || !strcmp (dir.d_name, ".."))
+            continue;
         //
         snprintf (lp, 255, "%s/%s", path, dir.d_name);
         if (dir.d_type & DT_DIR)
@@ -623,6 +614,8 @@ int sys_job_scan (struct fm_job *p, char *path)
 
 int fat_job_scan (struct fm_job *p, char *path)
 {
+    if (!path) return -1;
+
     char lp[256];
     FRESULT res;
     FDIR dir;
@@ -665,14 +658,14 @@ int fat_job_scan (struct fm_job *p, char *path)
             }
             snprintf (lp, 255, "%s/%s", path, fno.fname);
             //NPrintf ("job:processing %s\n", lp);
-            if (fno.fattrib & AM_DIR) 
+            if (fno.fattrib & AM_DIR)
             {                    /* It is a directory */
                 //fm_job_add (p, fno.fname, 1, 0);
                 //fm_job_add (p, lp, 1, 0);
                 //recurse
                 fat_job_scan (p, lp);
-            } 
-            else 
+            }
+            else
             {                                       /* It is a file. */
                 //NPrintf ("FAT f_stat for '%s', res %d\n", lp, res);
                 if (f_stat (lp, &fno) == FR_OK)
@@ -694,8 +687,10 @@ int fat_job_scan (struct fm_job *p, char *path)
 }
 
 
-int ntfs_job_scan (struct fm_job *p, char *path)
+static int ntfs_job_scan (struct fm_job *p, char *path)
 {
+    if (!path) return -1;
+
     char lp[256];
     DIR_ITER *pdir = NULL;
     sysFSDirent dir;
@@ -739,7 +734,7 @@ int ntfs_job_scan (struct fm_job *p, char *path)
                 // It is a directory - recurse call
                 ntfs_job_scan (p, lp);
             }
-            else 
+            else
             {
                 // It is a file
                 if (ps3ntfs_stat (lp, &st) < 0)
