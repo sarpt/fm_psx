@@ -6,7 +6,8 @@
 #include <math.h>
 #include <sys/process.h>
 
-#define EXIT_PATH	"/dev_hdd0/game/IRISMAN00/USRDIR/RELOAD.SELF"
+//#define EXIT_PATH	"/dev_hdd0/game/NP0APOLLO/USRDIR/RELOAD.SELF"
+#define EXIT_PATH	"/dev_hdd0/game/PS3SFM001/USRDIR/EXTRA.SELF"
 
 //#define _FPS
 
@@ -363,13 +364,13 @@ int fmapp_update(int dat)
         {
             char sel = (ps->current) ? ps->current->selected : 1;
             refresh_active_panel(0);                            // SELECT + L3 = Refresh / Select None
-            if(PPad (BUTTON_L2)) fm_panel_select_all (ps, sel); // SELECT + L2 + L3 = Toggle All
+            if(PPad (BUTTON_L2)) fm_panel_select_all (ps, sel); // SELECT + L3 + L2 = Toggle All
         }
         else if (ps->path)
         {
             fm_status_set ("", 1, 0xffeeeeFF);
             //check if we're allowed to create dir?!
-            if(strlen(ps->path) < 6 || strstr(ps->path, "/dev_flash/") || strstr(ps->path, "/dev_bdvd/"))
+            if(strlen(ps->path) < 6 || strstr(ps->path, "/dev_flash/") || strstr(ps->path, "/dev_bdvd/") || strstr(ps->path, "/app_home/"))
             {
                 snprintf (sp, CBSIZE, "New folder is not allowed in %s", ps->path);
                 fm_status_set (sp, 0, 0xffeeeeFF);
@@ -379,6 +380,9 @@ int fmapp_update(int dat)
                 snprintf (sp, CBSIZE, "New folder");
                 if(Get_OSK_String("New folder", sp, 255) == 0)
                 {
+                    if(strcmp(sp, "New folder") == 0)
+                       return 0;
+
                     //new dir
                     char lp[CBSIZE];
                     snprintf (lp, CBSIZE, "new dir %s", sp);

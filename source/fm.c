@@ -22,7 +22,7 @@
 #include "ff.h"
 #include "ntfs.h"
 
-#define FONT_W	8
+#define FONT_W	4
 #define FONT_H	16
 
 static int frame = 0;
@@ -1231,7 +1231,7 @@ int fm_panel_draw (struct fm_panel *p)
 
     //draw panel content: 56 lines - 1 for dir path, 1 for status - 54
     int k;
-    SetCurrentFont (2);
+    SetCurrentFont (1);
     SetFontSize (FONT_W, FONT_H);
     //title - current path
     SetFontColor (PATH_COLOR, BLACK);
@@ -1251,6 +1251,8 @@ int fm_panel_draw (struct fm_panel *p)
         ;//skip some entries
     for (k = 0; k < wh && ptr != NULL; k++, ptr = ptr->next)
     {
+        if(is_active_panel) SetFontColor (FILES_COLOR, BLACK);
+
         //draw current item
         if (p->current == ptr && is_active_panel)
         {
@@ -1266,7 +1268,7 @@ int fm_panel_draw (struct fm_panel *p)
             {
                fname[0] = '>';
             }
-            fm_fname_get (ptr, 51, fname + 1);
+            fm_fname_get (ptr, 48, fname + 1);
             DrawRect2d (p->x, p->y + FONT_H + k * FONT_H, 0, p->w, FONT_H, SELECT_BAR);
             DrawString (p->x, p->y + FONT_H + k * FONT_H, fname);
         }
@@ -1275,13 +1277,13 @@ int fm_panel_draw (struct fm_panel *p)
             if (ptr->selected || p->current == ptr)
             {
                 fname[0] = (p->current == ptr) ? '>' : '*'; 
-                fm_fname_get (ptr, 51, fname + 1);
+                fm_fname_get (ptr, 48, fname + 1);
                 DrawRect2d (p->x, p->y + FONT_H + k * FONT_H, 0, p->w, FONT_H, ptr->selected ? (is_active_panel ? SELECTED_COLOR : INACTIVE_SELECT) : INACTIVE_BAR);
                 DrawString (p->x, p->y + FONT_H + k * FONT_H, fname);
             }
             else
             {
-                fm_fname_get (ptr, 51, fname);
+                fm_fname_get (ptr, 48, fname);
                 DrawString (p->x + FONT_W, p->y + FONT_H + k * FONT_H, fname);
             }
         }
@@ -1292,9 +1294,12 @@ int fm_panel_draw (struct fm_panel *p)
                 snprintf (fname, 52, "%4luGB", ptr->size / GBSZ);
             else if (ptr->size > MBSZ)
                 snprintf (fname, 52, "%4luMB", ptr->size / MBSZ);
-            else
+            else if(ptr->size > 1024)
                 snprintf (fname, 52, "%4luKB", ptr->size / KBSZ);
-            DrawString (p->x + FONT_W + (46 * FONT_W), p->y + FONT_H + k * FONT_H, fname);
+            else
+                snprintf (fname, 52, "%6lu", ptr->size);
+            if(is_active_panel) SetFontColor (WHITE, BLACK);
+            DrawString (p->x + FONT_W + (95 * FONT_W), p->y + FONT_H + k * FONT_H, fname);
         }
     }
     //status - size, files, dirs
