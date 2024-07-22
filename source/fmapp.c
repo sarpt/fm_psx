@@ -6,8 +6,7 @@
 #include <math.h>
 #include <sys/process.h>
 
-//#define EXIT_PATH	"/dev_hdd0/game/NP0APOLLO/USRDIR/RELOAD.SELF"
-#define EXIT_PATH	"/dev_hdd0/game/PS3SFM001/USRDIR/EXTRA.SELF"
+#define EXIT_PATH	"/dev_hdd0/game/IRISMAN00/USRDIR/RELOAD.SELF"
 
 //#define _FPS
 
