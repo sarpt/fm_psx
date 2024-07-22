@@ -922,7 +922,7 @@ int fm_job_delete (struct fm_panel *p, char *src, int (*ui_render)(int dt))
     struct fm_job *job = &fmjob;
     int ret;
     //
-    if (!src)
+    if ( (!strncmp (src, "sys://", 6) && strchr(src + 6, '/') == NULL) || strstr(src, "/..") )
         return -1;
     //
     job->spath = strdup (src);
@@ -1255,7 +1255,7 @@ int fm_panel_draw (struct fm_panel *p)
         if (p->current == ptr && is_active_panel)
         {
             //
-            if(is_active_panel && ++frame > 30)
+            if(++frame > 30)
             {
                fname[0] = (ptr->selected) ? '>' : ' ';
                if(frame > 60) frame = 0;
@@ -1264,7 +1264,7 @@ int fm_panel_draw (struct fm_panel *p)
                fname[0] = '*';
             else
             {
-               fname[0] = is_active_panel ? '>' : ' ';
+               fname[0] = '>';
             }
             fm_fname_get (ptr, 51, fname + 1);
             DrawRect2d (p->x, p->y + FONT_H + k * FONT_H, 0, p->w, FONT_H, SELECT_BAR);
@@ -1272,11 +1272,11 @@ int fm_panel_draw (struct fm_panel *p)
         }
         else
         {
-            if (ptr->selected)
+            if (ptr->selected || p->current == ptr)
             {
-                fname[0] = '*';
+                fname[0] = (p->current == ptr) ? '>' : '*'; 
                 fm_fname_get (ptr, 51, fname + 1);
-                DrawRect2d (p->x, p->y + FONT_H + k * FONT_H, 0, p->w, FONT_H, is_active_panel ? SELECTED_COLOR : INACTIVE_SELECT);
+                DrawRect2d (p->x, p->y + FONT_H + k * FONT_H, 0, p->w, FONT_H, ptr->selected ? (is_active_panel ? SELECTED_COLOR : INACTIVE_SELECT) : INACTIVE_BAR);
                 DrawString (p->x, p->y + FONT_H + k * FONT_H, fname);
             }
             else

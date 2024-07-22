@@ -6,7 +6,7 @@
 #include <math.h>
 #include <sys/process.h>
 
-#define EXIT_PATH	"/dev_hdd0/game/NP0APOLLO/USRDIR/RELOAD.SELF"
+#define EXIT_PATH	"/dev_hdd0/game/IRISMAN00/USRDIR/RELOAD.SELF"
 
 //#define _FPS
 
@@ -73,6 +73,12 @@ int fmapp_cleanup (int dt);   //5
 //
 struct fm_panel lp, rp;
 //
+
+int sys_fs_mount(char const* deviceName, char const* deviceFileSystem, char const* devicePath, int writeProt)
+{
+	lv2syscall8(837, (u64) deviceName, (u64) deviceFileSystem, (u64) devicePath, 0, (u64) writeProt, 0, 0, 0 );
+	return_to_user_prog(int);
+}
 
 #ifdef LIBBUILD
 extern void LoadTexture();
@@ -469,7 +475,18 @@ int fmapp_update(int dat)
             else
             {
                 snprintf (sp, CBSIZE, "%s/%s", ps->path, ps->current->name);
-                fm_job_delete (ps, sp, &fmapp_render);
+                if(!strcmp(sp, "sys://dev_flash"))
+                {
+                    sys_fs_mount("CELL_FS_IOS:BUILTIN_FLSH1", "CELL_FS_FAT", "/dev_blind", 0);
+                    refresh_active_panel(0);
+                }
+                else if(!strcmp(sp, "sys://dev_blind"))
+                {
+                    lv2syscall3(838, (uint64_t)(char*)"/dev_blind", 0, 1);
+                    refresh_active_panel(0);
+                }
+                else
+                    fm_job_delete (ps, sp, &fmapp_render);
             }
             //reload for content refresh
             refresh_active_panel(0);
