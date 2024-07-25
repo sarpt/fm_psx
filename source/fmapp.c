@@ -359,7 +359,7 @@ int fmapp_update(int dat)
     {
         char sp[CBSIZE];
         struct fm_panel *ps = app_active_panel ();
-        if(PPad (BUTTON_SELECT))
+        if(PPad (BUTTON_SELECT) || !strcmp(ps->path, "sys://"))
         {
             char sel = (ps->current) ? ps->current->selected : 1;
             refresh_active_panel(0);                            // SELECT + L3 = Refresh / Select None
@@ -407,7 +407,7 @@ int fmapp_update(int dat)
                 //char *curfile = ps->current->name;
                 //uint64_t size = ps->current->size;
 
-                if(!path1 || strncmp(path1, "sys:/", 5))
+                if(!path1 || PPad (BUTTON_L2))
                     fm_toggle_selection (ps);
                 else
                 {
@@ -522,7 +522,7 @@ copy_files:
                           snprintf (sp, CBSIZE, "%s/%s", ps->path, ptr->name);
                           snprintf (dp, CBSIZE, "%s/", pd->path);
                           if(fm_job_copy (ps, sp, dp, &fmapp_render) == 0)
-                              {ptr->selected = FALSE; ps->sels--;}
+                            {ptr->selected = FALSE; ps->sels--;}
                       }
                    }
                 }
