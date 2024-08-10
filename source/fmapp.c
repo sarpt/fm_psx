@@ -9,7 +9,9 @@
 //#define EXTRA_SELF
 
 #ifdef EXTRA_SELF
-#define EXIT_PATH	"/dev_hdd0/game/NP0APOLLO/USRDIR/RELOAD.SELF"
+#define EXIT_PATH	"/dev_hdd0/game/BLES80608/USRDIR/RELOAD.SELF"
+//#define EXIT_PATH	"/dev_hdd0/game/NP0APOLLO/USRDIR/RELOAD.SELF"
+//#define EXIT_PATH	"/dev_hdd0/game/RETROARCH/USRDIR/cores/snes9x_libretro_ps3.SELF"
 #else
 #define EXIT_PATH	"/dev_hdd0/game/IRISMAN00/USRDIR/RELOAD.SELF"
 #endif
@@ -390,6 +392,8 @@ int fmapp_update(int dat)
                     fm_job_rename (ps->path, ps->current->name, sp);
                     //reload for content refresh
                     refresh_active_panel(0);
+                    //locate renamed item
+                    fm_panel_locate (app_active_panel(), sp);
                 }
             }
         }
@@ -429,6 +433,8 @@ int fmapp_update(int dat)
                     fm_job_newdir (ps->path, sp);
                     //reload for content refresh
                     refresh_active_panel(0);
+                    //locate new item
+                    fm_panel_locate (app_active_panel(), sp);
                 }
             }
         }
