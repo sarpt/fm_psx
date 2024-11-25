@@ -1,5 +1,5 @@
 @echo off
-title Compiling IRISMAN
+title Compiling fm_psx
 taskkill /IM cmd.exe /T /FI "WINDOWTITLE eq Administrator:*">NUL
 cls
 
@@ -11,8 +11,6 @@ set PS3DEV=%PS3SDK%/ps3dev
 
 make npdrm
 
-if exist libsfm_ps3.a copy /Y libsfm_ps3.a ..\lib\libsfm_ps3.a >nul
-
 :quit
 del *.elf
-
+pause
