@@ -1255,6 +1255,8 @@ int fm_menu_show (void)
         "Mount",   //4
     };
 
+    menu_max = 4;
+
     //
     int k;
     struct fm_panel *ps = app_active_panel ();
@@ -1265,7 +1267,7 @@ int fm_menu_show (void)
         sprintf(menu_options[2], "Shutdown");
         menu_max = 3; fm_root = 1;
     }
-    else
+    else if(ps->path)
     {
         if(use_link)
             sprintf(menu_options[0], "Link");

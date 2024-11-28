@@ -197,18 +197,15 @@ static void refresh_active_panel(u8 all)
 static void set_default_use_link(void)
 {
     use_link = false;
-    struct fm_panel *ps = app_active_panel();
-    struct fm_panel *pd = app_inactive_panel();
+    struct fm_panel *ps = app_active_panel(); if(!ps) return;
+    struct fm_panel *pd = app_inactive_panel(); if(!pd) return;
 
-    if(pd && ps)
+    char *path1 = ps->path; if(!path1) return;
+    char *path2 = pd->path; if(!path2) return;
+
+    if(strlen(path1) > 5 && strlen(path2) > 5)
     {
-        char *path1 = ps->path;
-        char *path2 = pd->path;
-
-        if(strlen(path1) > 5 && path2 && strlen(path2) > 5)
-        {
-            use_link = path1 && path2 && !strncmp(path1, "sys://dev_hdd0", 14) && !strncmp(path2, "sys://dev_hdd0", 14);
-        }
+        use_link = !strncmp(path1, "sys://dev_hdd0", 14) && !strncmp(path2, "sys://dev_hdd0", 14);
     }
 }
 
@@ -658,10 +655,10 @@ int fmapp_update(int dat)
                     else
                     {
                         struct fm_panel *pd = app_inactive_panel(); if(!pd) return 0;
-                        char *path1 = ps->path;
-                        char *path2 = pd->path;
+                        char *path1 = ps->path; if(!path1) return 0;
+                        char *path2 = pd->path; if(!path2) return 0;
 
-                        if(strlen(path1) > 5 && path2 && strlen(path2) > 5)
+                        if(strlen(path1) > 5 && strlen(path2) > 5)
                         {
                             set_default_use_link();
                             goto copy_files;
