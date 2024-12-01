@@ -6,7 +6,7 @@
 #include <math.h>
 #include <sys/process.h>
 
-//#define EXTRA_SELF
+#define EXTRA_SELF
 
 #ifdef EXTRA_SELF
 #define EXIT_PATH	"/dev_hdd0/game/BLES80608/USRDIR/RELOAD.SELF"
@@ -326,12 +326,27 @@ static void action_refresh(void)
     if(PPad (BUTTON_L2)) fm_panel_select_all (ps, sel); // SELECT + L3 + L2 = Toggle All
 }
 
+static void action_launch(const char *path1, const char *curfile)
+{
+    if(!path1 || !curfile) return;
+
+    if(!strncmp(path1, "sys:/", 5) && (strstr(curfile, ".self") || strstr(curfile, ".SELF") || !strcmp(curfile, "EBOOT.BIN")))
+    {
+        char sp[CBSIZE];
+        snprintf (sp, CBSIZE, "%s/%s", path1 + 5, curfile);
+        sysProcessExitSpawn2((char*)sp, NULL, NULL, NULL, 0, 3071, SYS_PROCESS_SPAWN_STACK_SIZE_1M);
+        return;
+    }
+}
+
 static void action_mount(void)
 {
     struct fm_panel *ps = app_active_panel(); if(!ps) return;
 
-    char *path1 = ps->path; if(!ps->current) return;
-    char *curfile = ps->current->name;
+    char *path1 = ps->path; if(!path1 || !ps->current) return;
+    char *curfile = ps->current->name; if(!curfile) return;
+
+    action_launch(path1, curfile);
 
     char action[12 + strlen(path1) + strlen(curfile)];
     sprintf(action, "/mount_ps3%s/%s", path1 + 5, curfile);
@@ -648,6 +663,8 @@ int fmapp_update(int dat)
                     fm_toggle_selection (ps);
                 else
                 {
+                    action_launch(path1, ps->current->name); // launch self / eboot.bin
+
                     if(mount_item)
                     {
                         action_mount();
@@ -743,7 +760,7 @@ copy_files:
                     return 0;
                 }
             }
-            else
+            else if(ps->current)
             {
                 snprintf (sp, CBSIZE, "%s/%s", ps->path, ps->current->name);
                 snprintf (dp, CBSIZE, "%s/", pd->path);
