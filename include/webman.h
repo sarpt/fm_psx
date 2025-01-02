@@ -1,4 +1,5 @@
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <netinet/in.h>
 
 #define HTML_RECV_SIZE	2048
