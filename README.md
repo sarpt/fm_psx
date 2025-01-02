@@ -49,3 +49,8 @@ use the opensource toolchain and libs from here:
 
 additional libraries can be found here but should not be required
 - https://github.com/bucanero/psl1ght-libs
+
+# build for RPCS3
+build for RPCS3 disables NTFS support since it crashes with unmapped address access with it enabled
+
+```DFLAGS="-DRPCS3" make pkg```

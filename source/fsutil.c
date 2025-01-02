@@ -271,6 +271,7 @@ int rootfs_probe ()
                 continue;
             }
             //NTFS
+            #ifndef RPCS3
             if (fs_ntfs_k && (rootfs[k].fs_type == FS_TNTFS || rootfs[k].fs_type == FS_TEXT))
             {
                 if (rootfs[k].fs_parts > 0 && !PS3_NTFS_IsInserted (k))
@@ -298,6 +299,7 @@ int rootfs_probe ()
                     continue;
                 } //mount count > 0
             }
+            #endif
         }
     }
     //check new devices
@@ -323,6 +325,7 @@ int rootfs_probe ()
                 NPrintf ("!rootfs_probe attach fat%d: on dev %d, res %d, res2 %d\n", fs_fat_k, k, res, res2);
             }
             //probe NTFS
+            #ifndef RPCS3
             if (mounts[k] == NULL)
             {
                 int ntfsParts = ntfsMountDevice (disc_ntfs[k], &mounts[k], NTFS_DEFAULT | NTFS_RECOVER);
@@ -353,6 +356,7 @@ int rootfs_probe ()
                     continue;
                 }
             }
+            #endif
             //probe EXT
         } //if nothing is mounted on the USB drive
     }
